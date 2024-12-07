@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   mqtt_client: ^10.5.1
+  fl_chart: ^0.69.2
   flutter_json_view: ^1.0.2
 
 dev_dependencies:

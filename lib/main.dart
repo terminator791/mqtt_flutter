@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'dart:convert';
+import 'package:fl_chart/fl_chart.dart';
 
 void main() {
   runApp(MqttApp());
@@ -14,7 +15,13 @@ class MqttApp extends StatelessWidget {
       title: 'MQTT Monitoring & Control',
       theme: ThemeData(
         primarySwatch: Colors.teal,
+        brightness: Brightness.light,
       ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.teal,
+      ),
+      themeMode: ThemeMode.system, // Automatic theme switching
       home: MqttHomePage(),
     );
   }
@@ -33,7 +40,13 @@ class _MqttHomePageState extends State<MqttHomePage> {
   final int port = 1883;
 
   bool isConnected = false;
+  bool isConnecting = false;
   String sensorData = '';
+  List<FlSpot> temperatureData = [];
+  List<FlSpot> humidityData = [];
+  List<FlSpot> lightData = [];
+  int dataCounter = 0;
+
   Map<String, bool> ledStates = {
     'led1': false,
     'led2': false,
@@ -49,6 +62,10 @@ class _MqttHomePageState extends State<MqttHomePage> {
   }
 
   Future<void> connect() async {
+    setState(() {
+      isConnecting = true;
+    });
+
     client.port = port;
     client.logging(on: true);
     client.setProtocolV311();
@@ -72,6 +89,10 @@ class _MqttHomePageState extends State<MqttHomePage> {
       showSnackbar('Connection failed: $e');
       client.disconnect();
     }
+
+    setState(() {
+      isConnecting = false;
+    });
   }
 
   void disconnect() {
@@ -98,23 +119,36 @@ class _MqttHomePageState extends State<MqttHomePage> {
   }
 
   void subscribeToSensorData() {
-    client.subscribe('sensor/data', MqttQos.atLeastOnce);
-    client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
-      final recMess = c[0].payload as MqttPublishMessage;
-      final message =
-          MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+  client.subscribe('sensor/data', MqttQos.atLeastOnce);
+  client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+    final recMess = c[0].payload as MqttPublishMessage;
+    final message =
+        MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
 
-      try {
-        final data = json.decode(message);
-        setState(() {
-          sensorData =
-              'Temperature: ${data['temperature']} °C\nHumidity: ${data['humidity']} %\nLight: ${data['light']}';
-        });
-      } catch (e) {
-        showSnackbar('Error parsing sensor data: $e');
-      }
-    });
-  }
+    try {
+      final data = json.decode(message);
+      setState(() {
+        // Ambil nilai sensor dan konversikan ke double
+        double temperature = (data['temperature'] as num).toDouble();
+        double humidity = (data['humidity'] as num).toDouble();
+        double light = (data['light'] as num).toDouble();
+
+        // Perbarui tampilan data sensor
+        sensorData =
+            'Temperature: $temperature °C\nHumidity: $humidity %\nLight: $light';
+
+        // Tambahkan data ke riwayat
+        dataCounter++;
+        temperatureData.add(FlSpot(dataCounter.toDouble(), temperature));
+        humidityData.add(FlSpot(dataCounter.toDouble(), humidity));
+        lightData.add(FlSpot(dataCounter.toDouble(), light));
+      });
+    } catch (e) {
+      showSnackbar('Error parsing sensor data: $e');
+    }
+  });
+}
+
 
   void toggleLED(String ledKey, bool value) {
     final payload = json.encode({ledKey: value ? 1 : 0});
@@ -148,59 +182,83 @@ class _MqttHomePageState extends State<MqttHomePage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Sensor Data:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.teal),
-                borderRadius: BorderRadius.circular(8),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sensor Data:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              child: Text(
-                sensorData.isEmpty ? 'No data yet' : sensorData,
-                style: TextStyle(color: Colors.black87),
-              ),
-            ),
-            SizedBox(height: 16),
-            Text(
-              'LED Control:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            Column(
-              children: ledStates.entries.map((entry) {
-                return SwitchListTile(
-                  title: Text('LED ${entry.key.toUpperCase()}'),
-                  value: entry.value,
-                  onChanged: (value) => toggleLED(entry.key, value),
-                );
-              }).toList(),
-            ),
-            SizedBox(height: 16),
-            if (!isConnected)
-              ElevatedButton.icon(
-                onPressed: connect,
-                icon: Icon(Icons.cloud_done),
-                label: Text('Connect'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
-                ),
-              )
-            else
-              ElevatedButton.icon(
-                onPressed: disconnect,
-                icon: Icon(Icons.cloud_off),
-                label: Text('Disconnect'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
+              Card(
+                elevation: 4,
+                margin: EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    sensorData.isEmpty ? 'No data yet' : sensorData,
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
               ),
-          ],
+              SizedBox(height: 16),
+              Text(
+                'LED Control:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              Wrap(
+                spacing: 8.0,
+                children: ledStates.entries.map((entry) {
+                  return FilterChip(
+                    label: Text(entry.key.toUpperCase()),
+                    selected: entry.value,
+                    onSelected: (value) => toggleLED(entry.key, value),
+                  );
+                }).toList(),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Sensor History:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              Container(
+                height: 200,
+                child: LineChart(
+                  LineChartData(
+                    gridData: FlGridData(show: true),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: temperatureData,
+                        isCurved: true,
+                        color: Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+              if (!isConnected)
+                ElevatedButton.icon(
+                  onPressed: connect,
+                  icon: isConnecting
+                      ? CircularProgressIndicator()
+                      : Icon(Icons.cloud_done),
+                  label: Text('Connect'),
+                  style:
+                      ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: disconnect,
+                  icon: Icon(Icons.cloud_off),
+                  label: Text('Disconnect'),
+                  style:
+                      ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
+                ),
+            ],
+          ),
         ),
       ),
     );
