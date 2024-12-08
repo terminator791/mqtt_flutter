@@ -119,7 +119,7 @@ class _MqttHomePageState extends State<MqttHomePage> {
   }
 
   void subscribeToSensorData() {
-  client.subscribe('sensor/data', MqttQos.atLeastOnce);
+  client.subscribe('iot/sensor', MqttQos.atLeastOnce);
   client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
     final recMess = c[0].payload as MqttPublishMessage;
     final message =
@@ -153,7 +153,7 @@ class _MqttHomePageState extends State<MqttHomePage> {
   void toggleLED(String ledKey, bool value) {
     final payload = json.encode({ledKey: value ? 1 : 0});
     client.publishMessage(
-      'sensor/led',
+      'iot/led',
       MqttQos.atLeastOnce,
       MqttClientPayloadBuilder().addString(payload).payload!,
     );
